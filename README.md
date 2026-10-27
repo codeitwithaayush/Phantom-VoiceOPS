@@ -1,5 +1,7 @@
 # ZentroMart VoiceOps 2026 — Capstone Project
 
+**Public GitHub Repository**: [https://github.com/codeitwithaayush/Phantom-VoiceOPS](https://github.com/codeitwithaayush/Phantom-VoiceOPS)
+
 Voice-first, policy-grounded enterprise AI customer support system for **ZentroMart**, featuring speech recognition and synthesis via Gnani Voice SDK, dual-layer knowledge retrieval with policy precedence, caller identity security gates, relational SQL-style order joins, and multi-turn state tracking.
 
 ---

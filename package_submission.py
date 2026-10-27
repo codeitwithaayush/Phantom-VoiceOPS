@@ -1,9 +1,10 @@
 """
 Packages the ZentroMart VoiceOps final submission into team_name_voiceops.zip
-matching the exact Capstone specification:
+matching Section 05 ('What to submit') of the Capstone Brief:
 
 team_name_voiceops.zip
 ├── README.md
+├── .env.example
 ├── requirements.txt
 ├── run.py
 ├── src/
@@ -42,6 +43,7 @@ def package_zip() -> None:
 
     included_entries = [
         "README.md",
+        ".env.example",
         "requirements.txt",
         "run.py",
         "report.pdf",

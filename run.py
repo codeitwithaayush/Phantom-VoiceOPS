@@ -1,7 +1,7 @@
 """
 ZentroMart VoiceOps 2026 - Batch Execution & Evaluation Pipeline.
 
-Processes a folder of audio/text queries or evaluation datasets (practice/questions.csv,
+Processes a folder of customer audio files, text queries, or evaluation datasets (practice/questions.csv,
 practice/conversations.csv), executes the agent brain, and saves:
 - Output transcripts
 - Audio replies synthesized via Gnani TTS (model='timbre-v2.5', voice='Kaveri')
@@ -14,7 +14,7 @@ import json
 import logging
 from pathlib import Path
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from rich.console import Console
@@ -78,8 +78,8 @@ def process_audio_directory(
             "transcript": transcript,
             "decision": agent_out["decision"],
             "reply": agent_out["reply"],
-            "tool_calls": agent_out["tool_calls"],
-            "retrieved_evidence": agent_out["evidence"],
+            "tool_calls": "; ".join(agent_out["tool_calls"]),
+            "retrieved_evidence": "; ".join(agent_out["evidence"]),
             "audio_reply_file": audio_reply_path or "",
         })
 
@@ -103,7 +103,6 @@ def process_questions_dataset(
 
     for idx, row in df.iterrows():
         qid = row.get("id", f"Q{idx}")
-        # Use asr_text if available to simulate realistic voice speech input
         prompt = row.get("asr_text") or row.get("question", "")
 
         conv_id = f"single_turn_{qid}"
@@ -151,7 +150,6 @@ def process_conversations_dataset(
 
     logger.info(f"Processing multi-turn conversations from {csv_path.name}...")
 
-    # Group by conversation_id ordered by turn
     for cid, group in df.groupby("conversation_id"):
         agent.reset_session(cid)
         sorted_turns = group.sort_values(by="turn", key=lambda col: col.astype(int))
@@ -182,21 +180,37 @@ def process_conversations_dataset(
 def main() -> None:
     """Main CLI entry point for batch processing."""
     parser = argparse.ArgumentParser(description="ZentroMart VoiceOps Batch Runner")
+    # Positional path allows running: python run.py path/to/audios
+    parser.add_argument("path", nargs="?", default=None, help="Optional path to audio folder, CSV, or text file")
     parser.add_argument("--input-dir", type=str, help="Directory containing audio or text query files")
     parser.add_argument("--input-file", type=str, help="Single CSV or text file to process")
+    parser.add_argument("--data-dir", type=str, default="data", help="Directory containing database CSV tables")
+    parser.add_argument("--kb-dir", type=str, default="kb", help="Directory containing knowledge base Markdown files")
     parser.add_argument("--output-dir", type=str, default="sample_outputs", help="Directory to store outputs")
     parser.add_argument("--tts-limit", type=int, default=5, help="Number of audio replies to synthesize via Gnani TTS")
     parser.add_argument("--no-tts", action="store_true", help="Disable TTS synthesis")
 
     args = parser.parse_args()
 
+    # Resolve positional argument if provided
+    if args.path:
+        pos_path = Path(args.path)
+        if pos_path.is_dir():
+            args.input_dir = str(pos_path)
+        elif pos_path.is_file():
+            args.input_file = str(pos_path)
+
     project_root = Path(__file__).resolve().parent
-    output_dir = project_root / args.output_dir
+    output_dir = Path(args.output_dir) if Path(args.output_dir).is_absolute() else project_root / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve data and kb directories
+    data_path = Path(args.data_dir) if Path(args.data_dir).is_absolute() else project_root / args.data_dir
+    kb_path = Path(args.kb_dir) if Path(args.kb_dir).is_absolute() else project_root / args.kb_dir
+
     # Initialize components
-    db_loader = DatabaseLoader(data_dir=project_root / "data")
-    kb_loader = KnowledgeBaseLoader(kb_dir=project_root / "kb")
+    db_loader = DatabaseLoader(data_dir=data_path if data_path.exists() else None)
+    kb_loader = KnowledgeBaseLoader(kb_dir=kb_path if kb_path.exists() else None)
     voice_service = VoiceService()
     agent = VoiceOpsAgent(db_loader=db_loader, kb_loader=kb_loader)
 
@@ -206,7 +220,7 @@ def main() -> None:
     if args.input_dir:
         in_dir = Path(args.input_dir)
         if in_dir.exists() and in_dir.is_dir():
-            logger.info(f"Running batch on directory: {in_dir}")
+            logger.info(f"Running batch on audio directory: {in_dir}")
             audio_results = process_audio_directory(
                 audio_dir=in_dir,
                 agent=agent,
@@ -267,6 +281,12 @@ def main() -> None:
         c_csv = output_dir / "conversations_evaluation_summary.csv"
         c_df.to_csv(c_csv, index=False, encoding="utf-8")
         logger.info(f"Conversations summary saved to {c_csv}")
+
+    if "audio_queries" in all_results:
+        a_df = pd.DataFrame(all_results["audio_queries"])
+        a_csv = output_dir / "audio_evaluation_summary.csv"
+        a_df.to_csv(a_csv, index=False, encoding="utf-8")
+        logger.info(f"Audio queries summary saved to {a_csv}")
 
     # Print summary table to console
     table = Table(title="ZentroMart VoiceOps Execution Summary")
